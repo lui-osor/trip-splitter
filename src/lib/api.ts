@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import type { Trip, TripMember } from './database.types'
+import type { Expense, ExpenseCategory, SplitEntry, SplitType, Trip, TripMember } from './database.types'
 
 /** A trip enriched with its members list (fetched together for convenience). */
 export type TripWithMembers = Trip & {
@@ -110,4 +110,108 @@ export async function joinTripByCode(
   const first = Array.isArray(data) ? data[0] : data
   if (!first) throw new Error('Invalid invite code')
   return first as { trip_id: string; trip_name: string }
+}
+
+// ---------- Expenses ----------
+
+export async function listExpenses(tripId: string): Promise<Expense[]> {
+  const { data, error } = await supabase
+    .from('expenses')
+    .select()
+    .eq('trip_id', tripId)
+    .order('expense_date', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return data ?? []
+}
+
+export async function createExpense(input: {
+  tripId: string
+  description: string
+  amount: number
+  currency: string
+  paidBy: string
+  category: ExpenseCategory
+  splitType: SplitType
+  splits: SplitEntry[]
+  expenseDate?: string | null
+}): Promise<Expense> {
+  const { data, error } = await supabase
+    .from('expenses')
+    .insert({
+      trip_id: input.tripId,
+      description: input.description.trim(),
+      amount: input.amount,
+      currency: input.currency,
+      paid_by: input.paidBy,
+      category: input.category,
+      split_type: input.splitType,
+      splits: input.splits,
+      expense_date: input.expenseDate ?? new Date().toISOString().slice(0, 10),
+    })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteExpense(id: string): Promise<void> {
+  const { error } = await supabase.from('expenses').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ---------- Profile / member management ----------
+
+export async function updateProfileName(name: string): Promise<void> {
+  const trimmed = name.trim()
+  if (trimmed.length === 0) throw new Error('Name is required')
+
+  const { data: userRes } = await supabase.auth.getUser()
+  const uid = userRes.user?.id
+  if (!uid) throw new Error('Not signed in')
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({ name: trimmed, updated_at: new Date().toISOString() })
+    .eq('id', uid)
+  if (error) throw error
+}
+
+export async function renameTripMember(
+  memberId: string,
+  name: string,
+): Promise<void> {
+  const trimmed = name.trim()
+  if (trimmed.length === 0) throw new Error('Name is required')
+
+  const { error } = await supabase
+    .from('trip_members')
+    .update({ name: trimmed })
+    .eq('id', memberId)
+  if (error) throw error
+}
+
+/**
+ * Remove the current user from the trip. Trip owner cannot leave — must delete.
+ * The DB policy allows both self-removal and owner-removal, so this covers self.
+ */
+export async function leaveTrip(tripId: string): Promise<void> {
+  const { data: userRes } = await supabase.auth.getUser()
+  const uid = userRes.user?.id
+  if (!uid) throw new Error('Not signed in')
+
+  const { error } = await supabase
+    .from('trip_members')
+    .delete()
+    .eq('trip_id', tripId)
+    .eq('user_id', uid)
+  if (error) throw error
+}
+
+/**
+ * Delete the trip entirely (owner only). Cascades to members + expenses.
+ */
+export async function deleteTrip(tripId: string): Promise<void> {
+  const { error } = await supabase.from('trips').delete().eq('id', tripId)
+  if (error) throw error
 }

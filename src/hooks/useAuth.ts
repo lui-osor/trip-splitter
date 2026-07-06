@@ -8,6 +8,7 @@ export type AuthState = {
   user: User | null
   profile: Profile | null
   loading: boolean
+  refreshProfile: () => Promise<void>
 }
 
 /**
@@ -39,8 +40,9 @@ export function useAuth(): AuthState {
     }
   }, [])
 
+  const uid = session?.user?.id
   useEffect(() => {
-    if (!session?.user) {
+    if (!uid) {
       setProfile(null)
       return
     }
@@ -48,7 +50,7 @@ export function useAuth(): AuthState {
     supabase
       .from('profiles')
       .select()
-      .eq('id', session.user.id)
+      .eq('id', uid)
       .maybeSingle()
       .then(({ data }) => {
         if (!cancelled) setProfile(data)
@@ -56,13 +58,24 @@ export function useAuth(): AuthState {
     return () => {
       cancelled = true
     }
-  }, [session?.user?.id])
+  }, [uid])
+
+  async function refreshProfile() {
+    if (!uid) return
+    const { data } = await supabase
+      .from('profiles')
+      .select()
+      .eq('id', uid)
+      .maybeSingle()
+    setProfile(data)
+  }
 
   return {
     session,
     user: session?.user ?? null,
     profile,
     loading,
+    refreshProfile,
   }
 }
 

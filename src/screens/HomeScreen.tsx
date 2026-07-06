@@ -1,43 +1,132 @@
-import { useState } from 'react'
-import { signOut } from '../hooks/useAuth'
+import { useEffect, useMemo, useState } from 'react'
 import { useTrips } from '../hooks/useTrips'
-import { CopyableCode } from '../components/CopyableCode'
-import { IS_DEV } from '../lib/supabase'
+import { useTripData } from '../hooks/useTripData'
+import { BottomNav, type TabKey } from '../components/BottomNav'
+import { computeBalances, computeSettlements } from '../lib/balances'
+import { convert, fetchRates, formatMoney } from '../lib/currency'
+import { supabase, IS_DEV } from '../lib/supabase'
+import { AccountSheet } from './AccountSheet'
+import { AddExpenseSheet } from './AddExpenseSheet'
+import { ExpenseDetailSheet } from './ExpenseDetailSheet'
 import { CreateTripSheet } from './CreateTripSheet'
 import { JoinTripSheet } from './JoinTripSheet'
 import { TripListSheet } from './TripListSheet'
+import { FeedTab } from './tabs/FeedTab'
+import { BalancesTab } from './tabs/BalancesTab'
+import { SettleTab } from './tabs/SettleTab'
+import { SummaryTab } from './tabs/SummaryTab'
 import type { Profile } from '../lib/database.types'
 
-type SheetKey = 'none' | 'list' | 'create' | 'join'
+type SheetKey =
+  | 'none'
+  | 'list'
+  | 'create'
+  | 'join'
+  | 'add-expense'
+  | 'expense-detail'
+  | 'account'
 
 type Props = {
   userId: string
   profile: Profile | null
   email: string
+  refreshProfile: () => Promise<void>
 }
 
-export function HomeScreen({ userId, profile, email }: Props) {
+// Display-toggle options in the header. Kept short intentionally.
+const DISPLAY_CURRENCIES = ['COP', 'USD', 'EUR']
+
+export function HomeScreen({ userId, profile, email, refreshProfile }: Props) {
   const { trips, currentTrip, loading, refresh, setCurrent } = useTrips(userId)
+  void supabase // keep the export path exercised for realtime
+  const { expenses, refresh: refreshExpenses } = useTripData(currentTrip?.id)
+
+  const [tab, setTab] = useState<TabKey>('feed')
   const [sheet, setSheet] = useState<SheetKey>('none')
+  const [selectedExpenseId, setSelectedExpenseId] = useState<string | null>(null)
+  const [displayCurrency, setDisplayCurrency] = useState<string | null>(null)
+  const [simplify, setSimplify] = useState(true)
+  const [rates, setRates] = useState<Record<string, number>>({})
 
   const displayName = profile?.name ?? email.split('@')[0]
   const hasTrips = trips.length > 0
+
+  // Reset display currency when the trip changes (default to trip's base).
+  useEffect(() => {
+    if (currentTrip) setDisplayCurrency(currentTrip.base_currency)
+  }, [currentTrip?.id, currentTrip?.base_currency])
+
+  // Fetch rates in the display currency (recomputes when it changes).
+  useEffect(() => {
+    if (!displayCurrency) return
+    fetchRates(displayCurrency).then(setRates)
+  }, [displayCurrency])
+
+  const displayCur = displayCurrency ?? currentTrip?.base_currency ?? 'EUR'
+
+  // Header display-toggle: fixed set of COP / USD / EUR (Luisa's most-used).
+  const currencyOptions = DISPLAY_CURRENCIES
+
+  // Current user's trip_member row (if they've joined this trip)
+  const currentMemberId = useMemo(() => {
+    if (!currentTrip) return null
+    return currentTrip.members.find((m) => m.user_id === userId)?.id ?? null
+  }, [currentTrip?.id, userId])
+
+  // Balances + settlements in the display currency
+  const balances = useMemo(() => {
+    if (!currentTrip || Object.keys(rates).length === 0) return []
+    return computeBalances(currentTrip.members, expenses, displayCur, rates)
+  }, [currentTrip?.id, currentTrip?.members, expenses, displayCur, rates])
+
+  const settlements = useMemo(() => {
+    if (!simplify) return computeSettlements(balances) // TODO: raw-pairwise mode
+    return computeSettlements(balances)
+  }, [balances, simplify])
+
+  // Trip total (converted, in display currency)
+  const tripTotal = useMemo(() => {
+    if (!expenses.length) return 0
+    return expenses.reduce(
+      (sum, e) => sum + convert(e.amount, e.currency, displayCur, rates),
+      0,
+    )
+  }, [expenses, displayCur, rates])
+
+  const youBalance =
+    balances.find((b) => b.memberId === currentMemberId)?.amount ?? 0
+
+  const selectedExpense = useMemo(
+    () => expenses.find((e) => e.id === selectedExpenseId) ?? null,
+    [expenses, selectedExpenseId],
+  )
 
   async function handleCreated(tripId: string) {
     await refresh()
     setCurrent(tripId)
     setSheet('none')
   }
-
   async function handleJoined(tripId: string) {
     await refresh()
     setCurrent(tripId)
     setSheet('none')
   }
-
   function handlePickTrip(tripId: string) {
     setCurrent(tripId)
     setSheet('none')
+  }
+  function handleAdded() {
+    refreshExpenses()
+    setSheet('none')
+  }
+  function handleExpenseDeleted() {
+    refreshExpenses()
+    setSelectedExpenseId(null)
+    setSheet('none')
+  }
+  function openDetail(id: string) {
+    setSelectedExpenseId(id)
+    setSheet('expense-detail')
   }
 
   if (loading) {
@@ -51,7 +140,7 @@ export function HomeScreen({ userId, profile, email }: Props) {
   return (
     <div className="flex flex-col h-full relative">
       {/* Header */}
-      <div className="bg-[var(--color-core-purple)] text-white px-6 pt-14 pb-6 flex-shrink-0">
+      <div className="bg-[var(--color-core-purple)] text-white px-6 pt-14 pb-5 flex-shrink-0">
         <div className="flex items-start justify-between mb-4">
           <div className="min-w-0 flex-1">
             <div className="text-[11px] uppercase tracking-wider font-medium text-white/60">
@@ -62,70 +151,154 @@ export function HomeScreen({ userId, profile, email }: Props) {
                 onClick={() => setSheet('list')}
                 className="no-ring bg-transparent border-none p-0 mt-1 cursor-pointer text-left flex items-center gap-1.5 max-w-full"
               >
-                <span
-                  className="font-semibold text-[26px] tracking-tight text-white truncate"
-                  style={{ fontFamily: 'var(--font-display)' }}
-                >
+                <span className="font-semibold text-[24px] tracking-tight text-white truncate">
                   {currentTrip.name}
                 </span>
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="rgba(255,255,255,0.8)"
-                  strokeWidth="2.4"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  style={{ flexShrink: 0 }}
-                >
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                   <path d="M6 9l6 6 6-6" />
                 </svg>
               </button>
             ) : (
-              <div
-                className="font-semibold text-[26px] tracking-tight text-white mt-1"
-                style={{ fontFamily: 'var(--font-display)' }}
-              >
+              <div className="font-semibold text-[24px] tracking-tight text-white mt-1">
                 Trip Splitter
               </div>
             )}
             {hasTrips && currentTrip && (
-              <div className="text-[12px] font-medium text-white/60 mt-1.5 flex items-center gap-1.5">
+              <div className="text-[12px] font-medium text-white/60 mt-1 flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-white/70" />
                 {currentTrip.members.length}{' '}
                 {currentTrip.members.length === 1 ? 'member' : 'members'}
               </div>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            {IS_DEV && (
-              <span className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-white/15">
-                Dev
-              </span>
+          <div className="flex flex-col items-end gap-2.5">
+            <div className="flex items-center gap-2">
+              {IS_DEV && (
+                <span className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-white/15">
+                  Dev
+                </span>
+              )}
+              <button
+                onClick={() => setSheet('account')}
+                className="no-ring w-[38px] h-[38px] rounded-full border-2 border-white/40 bg-white/10 text-white font-bold text-[15px] cursor-pointer flex items-center justify-center"
+                title="Account"
+              >
+                {displayName.charAt(0).toUpperCase()}
+              </button>
+            </div>
+            {hasTrips && currentTrip && currencyOptions.length > 1 && (
+              <div className="flex gap-0.5 bg-white/15 rounded-full p-0.5">
+                {currencyOptions.map((c) => {
+                  const selected = displayCur === c
+                  return (
+                    <button
+                      key={c}
+                      onClick={() => setDisplayCurrency(c)}
+                      className="no-ring border-none cursor-pointer rounded-full px-2.5 py-1.5 text-[11.5px] font-semibold"
+                      style={{
+                        background: selected ? 'white' : 'transparent',
+                        color: selected ? 'var(--color-uv-purple)' : 'white',
+                      }}
+                    >
+                      {c}
+                    </button>
+                  )
+                })}
+              </div>
             )}
-            <button
-              onClick={() => signOut()}
-              className="no-ring w-[38px] h-[38px] rounded-full border-2 border-white/40 bg-white/10 text-white font-bold text-[15px] cursor-pointer flex items-center justify-center"
-              title={`${displayName} — tap to log out`}
-            >
-              {displayName.charAt(0).toUpperCase()}
-            </button>
           </div>
         </div>
+
+        {hasTrips && currentTrip && (
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <div className="text-[12px] font-medium text-white/60">
+                Trip total
+              </div>
+              <div className="font-semibold text-[30px] tracking-tight mt-0.5 text-white tabular-nums">
+                {formatMoney(tripTotal, displayCur)}
+              </div>
+            </div>
+            <div className="text-right pb-1">
+              <div className="text-[12px] font-medium text-white/60">
+                {youBalance > 0.005
+                  ? "You're owed"
+                  : youBalance < -0.005
+                    ? 'You owe'
+                    : 'Your net'}
+              </div>
+              <div
+                className="font-semibold text-[19px] tracking-tight mt-0.5 tabular-nums"
+                style={{
+                  color:
+                    youBalance > 0.005
+                      ? '#B7DD9F'
+                      : youBalance < -0.005
+                        ? '#F49E9E'
+                        : 'rgba(255,255,255,0.9)',
+                }}
+              >
+                {formatMoney(Math.abs(youBalance), displayCur)}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Body */}
-      <div className="flex-1 overflow-y-auto app-scroll px-6 py-6 pb-24">
+      <div className="flex-1 overflow-y-auto app-scroll px-6 pt-5 pb-24">
         {!hasTrips ? (
           <EmptyState
             onCreate={() => setSheet('create')}
             onJoin={() => setSheet('join')}
           />
         ) : currentTrip ? (
-          <ActiveTripBody trip={currentTrip} />
+          <>
+            {tab === 'feed' && (
+              <FeedTab
+                expenses={expenses}
+                members={currentTrip.members}
+                baseCurrency={displayCur}
+                ratesInBase={rates}
+                onSelectExpense={openDetail}
+              />
+            )}
+            {tab === 'balances' && (
+              <BalancesTab
+                balances={balances}
+                currentMemberId={currentMemberId}
+                displayCurrency={displayCur}
+              />
+            )}
+            {tab === 'settle' && (
+              <SettleTab
+                settlements={settlements}
+                simplify={simplify}
+                onToggleSimplify={() => setSimplify((s) => !s)}
+                displayCurrency={displayCur}
+                currentMemberId={currentMemberId}
+              />
+            )}
+            {tab === 'summary' && (
+              <SummaryTab
+                expenses={expenses}
+                members={currentTrip.members}
+                displayCurrency={displayCur}
+                ratesInDisplay={rates}
+              />
+            )}
+          </>
         ) : null}
       </div>
+
+      {/* Bottom nav — only when we have a trip */}
+      {hasTrips && currentTrip && (
+        <BottomNav
+          tab={tab}
+          onTab={(t) => setTab(t)}
+          onAdd={() => setSheet('add-expense')}
+        />
+      )}
 
       {/* Sheets */}
       <TripListSheet
@@ -148,6 +321,47 @@ export function HomeScreen({ userId, profile, email }: Props) {
         onClose={() => setSheet('none')}
         onBack={() => setSheet(hasTrips ? 'list' : 'none')}
         onJoined={handleJoined}
+      />
+      {currentTrip && (
+        <>
+          <AddExpenseSheet
+            open={sheet === 'add-expense'}
+            tripId={currentTrip.id}
+            baseCurrency={currentTrip.base_currency}
+            members={currentTrip.members}
+            currentUserId={userId}
+            onClose={() => setSheet('none')}
+            onAdded={handleAdded}
+          />
+          <ExpenseDetailSheet
+            open={sheet === 'expense-detail'}
+            expense={selectedExpense}
+            members={currentTrip.members}
+            baseCurrency={displayCur}
+            ratesInBase={rates}
+            onClose={() => setSheet('none')}
+            onDeleted={handleExpenseDeleted}
+          />
+        </>
+      )}
+      <AccountSheet
+        open={sheet === 'account'}
+        profile={profile}
+        email={email}
+        userId={userId}
+        trip={currentTrip}
+        onClose={() => setSheet('none')}
+        onProfileChanged={async () => {
+          await Promise.all([refreshProfile(), refresh()])
+        }}
+        onTripLeft={async () => {
+          await refresh()
+          setSheet('none')
+        }}
+        onTripDeleted={async () => {
+          await refresh()
+          setSheet('none')
+        }}
       />
     </div>
   )
@@ -184,50 +398,11 @@ function EmptyState({
   )
 }
 
-function ActiveTripBody({
-  trip,
-}: {
-  trip: { name: string; code: string; base_currency: string; members: { name: string; color: string }[] }
-}) {
+function ComingSoon({ label }: { label: string }) {
   return (
-    <div>
-      <CopyableCode code={trip.code} variant="prominent" />
-
-      <div className="mt-5 mb-2 text-[13px] font-semibold text-[var(--color-fg-2)]">
-        Members
-      </div>
-      <div className="bg-white border border-[var(--color-border)] rounded-2xl overflow-hidden">
-        {trip.members.map((m, i) => (
-          <div
-            key={i}
-            className={
-              'flex items-center gap-3 px-4 py-3 ' +
-              (i < trip.members.length - 1
-                ? 'border-b border-[var(--color-divider)]'
-                : '')
-            }
-          >
-            <span
-              className="w-[34px] h-[34px] rounded-full flex-shrink-0 flex items-center justify-center font-bold text-[13px]"
-              style={{ background: m.color, color: 'var(--color-uv-purple)' }}
-            >
-              {m.name.charAt(0).toUpperCase()}
-            </span>
-            <span className="flex-1 text-[14.5px] font-medium">{m.name}</span>
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-6 p-5 bg-white border border-[var(--color-border)] rounded-2xl shadow-[0_1px_2px_rgba(30,0,47,0.06)]">
-        <div className="text-[13px] font-semibold text-[var(--color-fg-2)] uppercase tracking-wider mb-2">
-          Coming next
-        </div>
-        <h3 className="mb-3">Add expenses</h3>
-        <p className="text-[14px] text-[var(--color-fg-2)]">
-          Phase 4E builds the Feed, Balances, Settle, and Summary tabs plus the
-          Add-expense sheet with categories and split types.
-        </p>
-      </div>
+    <div className="pt-16 text-center">
+      <h3 className="mb-1.5">Coming soon</h3>
+      <p className="text-[13.5px] text-[var(--color-fg-2)]">{label}</p>
     </div>
   )
 }

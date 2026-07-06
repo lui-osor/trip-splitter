@@ -4,7 +4,7 @@ import { HomeScreen } from './screens/HomeScreen'
 import { LoginScreen } from './screens/LoginScreen'
 
 export default function App() {
-  const { session, profile, loading } = useAuth()
+  const { session, profile, loading, refreshProfile } = useAuth()
 
   return (
     <PhoneFrame>
@@ -19,6 +19,7 @@ export default function App() {
           userId={session.user.id}
           profile={profile}
           email={session.user.email ?? ''}
+          refreshProfile={refreshProfile}
         />
       )}
     </PhoneFrame>
