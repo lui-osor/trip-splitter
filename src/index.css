@@ -1,0 +1,112 @@
+@import "tailwindcss";
+
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap');
+
+@theme {
+  /* Claude-inspired warm palette */
+  --color-cream: #faf9f5;
+  --color-cream-soft: #f5f2ea;
+  --color-cream-warm: #ede8db;
+  --color-ink: #1f1c17;
+  --color-ink-soft: #4a4640;
+  --color-ink-muted: #8a847b;
+  --color-border: #e5dfd0;
+  --color-border-soft: #eee9dc;
+
+  --color-accent: #c96442;
+  --color-accent-hover: #b3573a;
+  --color-accent-soft: #f4e4dc;
+
+  --color-success: #4a7c59;
+  --color-warning: #b8860b;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Fraunces", ui-serif, Georgia, serif;
+
+  --radius-md: 0.625rem;
+  --radius-lg: 1rem;
+}
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+  }
+
+  body {
+    background-color: var(--color-cream);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "ss01", "cv11";
+  }
+
+  h1, h2, h3 {
+    font-family: var(--font-serif);
+    font-weight: 500;
+    letter-spacing: -0.015em;
+    color: var(--color-ink);
+  }
+
+  h1 { font-size: 2.5rem; line-height: 1.1; }
+  h2 { font-size: 1.75rem; line-height: 1.15; }
+  h3 { font-size: 1.25rem; line-height: 1.25; }
+
+  button {
+    font-family: inherit;
+    cursor: pointer;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    background-color: var(--color-accent);
+    color: white;
+    padding: 0.75rem 1.5rem;
+    border-radius: var(--radius-md);
+    font-weight: 500;
+    font-size: 0.95rem;
+    transition: background-color 0.15s ease;
+    border: none;
+  }
+  .btn-primary:hover {
+    background-color: var(--color-accent-hover);
+  }
+
+  .btn-secondary {
+    background-color: transparent;
+    color: var(--color-ink);
+    padding: 0.75rem 1.5rem;
+    border-radius: var(--radius-md);
+    font-weight: 500;
+    font-size: 0.95rem;
+    border: 1px solid var(--color-border);
+    transition: background-color 0.15s ease;
+  }
+  .btn-secondary:hover {
+    background-color: var(--color-cream-soft);
+  }
+
+  .card {
+    background-color: white;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+  }
+
+  .input {
+    background-color: white;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 0.625rem 0.875rem;
+    font-size: 0.95rem;
+    font-family: inherit;
+    color: var(--color-ink);
+    width: 100%;
+    outline: none;
+    transition: border-color 0.15s ease;
+  }
+  .input:focus {
+    border-color: var(--color-accent);
+  }
+}
