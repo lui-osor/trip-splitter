@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Sheet } from '../components/Sheet'
 import { joinTripByCode } from '../lib/api'
+import { errorMessage } from '../lib/errors'
 
 type Props = {
   open: boolean
@@ -25,11 +26,7 @@ export function JoinTripSheet({ open, onClose, onBack, onJoined }: Props) {
       onJoined(trip_id)
       setCode('')
     } catch (err) {
-      setError(
-        err instanceof Error && err.message
-          ? err.message.replace(/^error:\s*/i, '')
-          : 'Invalid or expired code',
-      )
+      setError(errorMessage(err, 'Invalid or expired code'))
       setSubmitting(false)
     }
   }

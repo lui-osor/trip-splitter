@@ -54,6 +54,8 @@ export async function listMyTrips(): Promise<TripWithMembers[]> {
 
 /**
  * Create a new trip and add the current user as owner + first member.
+ * Calls the SECURITY DEFINER RPC `create_trip` so the whole flow (trip + owner
+ * membership + placeholder friends) runs atomically without RLS/RETURNING races.
  * `friendNames` are placeholder members (user_id = null, joinable later).
  */
 export async function createTripWithMembers(input: {
@@ -61,56 +63,37 @@ export async function createTripWithMembers(input: {
   baseCurrency: string
   friendNames: string[]
 }): Promise<TripWithMembers> {
-  const { data: userRes } = await supabase.auth.getUser()
-  const user = userRes.user
-  if (!user) throw new Error('Not signed in')
+  const cleanedFriends = input.friendNames
+    .map((n) => n.trim())
+    .filter((n) => n.length > 0)
 
-  const { data: profile } = await supabase
-    .from('profiles')
+  const { data, error } = await supabase.rpc('create_trip', {
+    trip_name: input.name,
+    trip_base_currency: input.baseCurrency,
+    friend_names: cleanedFriends,
+  })
+  if (error) throw error
+
+  const created = Array.isArray(data) ? data[0] : data
+  if (!created) throw new Error('Trip was not created')
+
+  // Fetch the newly-created trip's members so the UI has a complete object.
+  const { data: members, error: mErr } = await supabase
+    .from('trip_members')
     .select()
-    .eq('id', user.id)
-    .maybeSingle()
+    .eq('trip_id', created.id)
+  if (mErr) throw mErr
 
-  const trip = await supabase
-    .from('trips')
-    .insert({
-      name: input.name.trim(),
-      base_currency: input.baseCurrency,
-      owner_id: user.id,
-    })
-    .select()
-    .single()
-  if (trip.error) throw trip.error
-
-  const AVATAR_COLORS = [
-    '#DA9AC7', '#8DCDE2', '#A7D296', '#E9A6A7',
-    '#EEEDB3', '#E5D8BD', '#85D1BD', '#96B0FD',
-  ]
-
-  const rows = [
-    // Owner as the first member
-    {
-      trip_id: trip.data.id,
-      user_id: user.id,
-      name: profile?.name || user.email?.split('@')[0] || 'You',
-      color: profile?.color || '#CBA5FD',
-    },
-    // Placeholder friends
-    ...input.friendNames
-      .map((n) => n.trim())
-      .filter((n) => n.length > 0)
-      .map((name, idx) => ({
-        trip_id: trip.data.id,
-        user_id: null,
-        name,
-        color: AVATAR_COLORS[idx % AVATAR_COLORS.length],
-      })),
-  ]
-
-  const membersRes = await supabase.from('trip_members').insert(rows).select()
-  if (membersRes.error) throw membersRes.error
-
-  return { ...trip.data, members: membersRes.data ?? [] }
+  return {
+    id: created.id,
+    name: created.name,
+    base_currency: created.base_currency,
+    code: created.code,
+    owner_id: created.owner_id,
+    created_at: created.created_at,
+    participants: [],
+    members: members ?? [],
+  }
 }
 
 /**

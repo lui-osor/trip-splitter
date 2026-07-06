@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Sheet } from '../components/Sheet'
 import { createTripWithMembers } from '../lib/api'
+import { errorMessage } from '../lib/errors'
 
 const CURRENCY_OPTIONS = ['EUR', 'USD', 'GBP', 'COP', 'CHF']
 
@@ -48,7 +49,7 @@ export function CreateTripSheet({ open, onClose, onBack, onCreated }: Props) {
       setBaseCurrency('EUR')
       setFriends(['', ''])
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create trip')
+      setError(errorMessage(err, 'Failed to create trip'))
       setSubmitting(false)
     }
   }

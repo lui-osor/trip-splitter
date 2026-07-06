@@ -101,6 +101,21 @@ export type Database = {
         Args: { join_code: string }
         Returns: { trip_id: string; trip_name: string }[]
       }
+      create_trip: {
+        Args: {
+          trip_name: string
+          trip_base_currency?: string
+          friend_names?: string[]
+        }
+        Returns: {
+          id: string
+          name: string
+          base_currency: string
+          code: string
+          owner_id: string
+          created_at: string
+        }[]
+      }
     }
   }
 }
