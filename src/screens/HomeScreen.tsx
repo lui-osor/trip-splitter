@@ -380,25 +380,32 @@ export function HomeScreen({ userId, profile, email, refreshProfile }: Props) {
       />
       {currentTrip && (
         <>
-          <AddExpenseSheet
-            open={sheet === 'add-expense'}
-            tripId={currentTrip.id}
-            baseCurrency={currentTrip.base_currency}
-            members={currentTrip.members}
-            currentUserId={userId}
-            onClose={() => setSheet('none')}
-            onSaved={handleAdded}
-          />
-          <AddExpenseSheet
-            open={sheet === 'edit-expense'}
-            tripId={currentTrip.id}
-            baseCurrency={currentTrip.base_currency}
-            members={currentTrip.members}
-            currentUserId={userId}
-            expense={selectedExpense}
-            onClose={() => setSheet('none')}
-            onSaved={handleAdded}
-          />
+          {/* Rendered conditionally so each open remounts the sheet — this is
+              what makes state initializers pick up the right `expense` prop
+              in edit mode, and gives the Add sheet a fresh form each time. */}
+          {sheet === 'add-expense' && (
+            <AddExpenseSheet
+              open
+              tripId={currentTrip.id}
+              baseCurrency={currentTrip.base_currency}
+              members={currentTrip.members}
+              currentUserId={userId}
+              onClose={() => setSheet('none')}
+              onSaved={handleAdded}
+            />
+          )}
+          {sheet === 'edit-expense' && selectedExpense && (
+            <AddExpenseSheet
+              open
+              tripId={currentTrip.id}
+              baseCurrency={currentTrip.base_currency}
+              members={currentTrip.members}
+              currentUserId={userId}
+              expense={selectedExpense}
+              onClose={() => setSheet('none')}
+              onSaved={handleAdded}
+            />
+          )}
           <ExpenseDetailSheet
             open={sheet === 'expense-detail'}
             expense={selectedExpense}
