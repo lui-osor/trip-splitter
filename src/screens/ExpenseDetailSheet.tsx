@@ -15,6 +15,7 @@ type Props = {
   ratesInBase: Record<string, number>
   onClose: () => void
   onDeleted: () => void
+  onEdit: () => void
 }
 
 export function ExpenseDetailSheet({
@@ -25,6 +26,7 @@ export function ExpenseDetailSheet({
   ratesInBase,
   onClose,
   onDeleted,
+  onEdit,
 }: Props) {
   if (!expense) {
     return <Sheet open={open} onClose={onClose} title="Expense">{null}</Sheet>
@@ -115,12 +117,20 @@ export function ExpenseDetailSheet({
         })}
       </div>
 
-      <button
-        onClick={handleDelete}
-        className="no-ring w-full mt-6 py-3.5 rounded-full bg-transparent text-[var(--color-danger)] font-semibold text-[15px] cursor-pointer border-[1.5px] border-[var(--color-danger)]"
-      >
-        Delete expense
-      </button>
+      <div className="flex gap-2.5 mt-6">
+        <button
+          onClick={onEdit}
+          className="no-ring flex-1 py-3.5 rounded-full bg-[var(--color-core-purple)] text-white font-semibold text-[15px] cursor-pointer border-none"
+        >
+          Edit
+        </button>
+        <button
+          onClick={handleDelete}
+          className="no-ring flex-1 py-3.5 rounded-full bg-transparent text-[var(--color-danger)] font-semibold text-[15px] cursor-pointer border-[1.5px] border-[var(--color-danger)]"
+        >
+          Delete
+        </button>
+      </div>
     </Sheet>
   )
 }

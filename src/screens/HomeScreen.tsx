@@ -30,6 +30,7 @@ type SheetKey =
   | 'create'
   | 'join'
   | 'add-expense'
+  | 'edit-expense'
   | 'expense-detail'
   | 'account'
 
@@ -386,7 +387,17 @@ export function HomeScreen({ userId, profile, email, refreshProfile }: Props) {
             members={currentTrip.members}
             currentUserId={userId}
             onClose={() => setSheet('none')}
-            onAdded={handleAdded}
+            onSaved={handleAdded}
+          />
+          <AddExpenseSheet
+            open={sheet === 'edit-expense'}
+            tripId={currentTrip.id}
+            baseCurrency={currentTrip.base_currency}
+            members={currentTrip.members}
+            currentUserId={userId}
+            expense={selectedExpense}
+            onClose={() => setSheet('none')}
+            onSaved={handleAdded}
           />
           <ExpenseDetailSheet
             open={sheet === 'expense-detail'}
@@ -396,6 +407,7 @@ export function HomeScreen({ userId, profile, email, refreshProfile }: Props) {
             ratesInBase={rates}
             onClose={() => setSheet('none')}
             onDeleted={handleExpenseDeleted}
+            onEdit={() => setSheet('edit-expense')}
           />
         </>
       )}

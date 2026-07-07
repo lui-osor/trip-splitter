@@ -173,6 +173,36 @@ export async function createExpense(input: {
   return data
 }
 
+export async function updateExpense(
+  id: string,
+  input: {
+    description: string
+    amount: number
+    currency: string
+    paidBy: string
+    category: ExpenseCategory
+    splitType: SplitType
+    splits: SplitEntry[]
+  },
+): Promise<Expense> {
+  const { data, error } = await supabase
+    .from('expenses')
+    .update({
+      description: input.description.trim(),
+      amount: input.amount,
+      currency: input.currency,
+      paid_by: input.paidBy,
+      category: input.category,
+      split_type: input.splitType,
+      splits: input.splits,
+    })
+    .eq('id', id)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
 export async function deleteExpense(id: string): Promise<void> {
   const { error } = await supabase.from('expenses').delete().eq('id', id)
   if (error) throw error

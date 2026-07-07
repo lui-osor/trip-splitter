@@ -2,12 +2,13 @@ import { useMemo, useState } from 'react'
 import { Sheet } from '../components/Sheet'
 import { CategoryIcon } from '../components/CategoryIcon'
 import { Avatar } from '../components/Avatar'
-import { createExpense } from '../lib/api'
+import { createExpense, updateExpense } from '../lib/api'
 import { CATEGORIES } from '../lib/categories'
 import { SUPPORTED_CURRENCIES, decimalsFor } from '../lib/currency'
 import { errorMessage } from '../lib/errors'
 import { parseAmount } from '../lib/parseAmount'
 import type {
+  Expense,
   ExpenseCategory,
   SplitEntry,
   SplitType,
@@ -22,8 +23,10 @@ type Props = {
   baseCurrency: string
   members: TripMember[]
   currentUserId: string
+  /** If provided, the sheet opens in edit mode and pre-fills from this expense. */
+  expense?: Expense | null
   onClose: () => void
-  onAdded: () => void
+  onSaved: () => void
 }
 
 export function AddExpenseSheet({
@@ -32,26 +35,70 @@ export function AddExpenseSheet({
   baseCurrency,
   members,
   currentUserId,
+  expense,
   onClose,
-  onAdded,
+  onSaved,
 }: Props) {
-  const [desc, setDesc] = useState('')
-  const [amountRaw, setAmountRaw] = useState('')
-  const [currency, setCurrency] = useState(baseCurrency)
-  const [category, setCategory] = useState<ExpenseCategory>('food')
+  const editing = Boolean(expense)
+
+  const [desc, setDesc] = useState(expense?.description ?? '')
+  const [amountRaw, setAmountRaw] = useState(
+    expense ? String(expense.amount) : '',
+  )
+  const [currency, setCurrency] = useState(expense?.currency ?? baseCurrency)
+  const [category, setCategory] = useState<ExpenseCategory>(
+    expense?.category ?? 'food',
+  )
   const [paidBy, setPaidBy] = useState<string>(() => {
-    // Default to the current user (their member row) if present.
+    // Editing: keep the original payer if they're still a member.
+    if (expense) {
+      const stillMember = members.find((m) => m.id === expense.paid_by)
+      if (stillMember) return stillMember.id
+    }
+    // Otherwise default to the current user.
     return (
       members.find((m) => m.user_id === currentUserId)?.id ??
       members[0]?.id ??
       ''
     )
   })
-  const [splitType, setSplitType] = useState<SplitType>('even')
-  const [included, setIncluded] = useState<Set<string>>(
-    () => new Set(members.map((m) => m.id)),
+  const [splitType, setSplitType] = useState<SplitType>(
+    expense?.split_type ?? 'even',
   )
-  const [shares, setShares] = useState<Record<string, string>>({})
+
+  // "Included" only matters for even splits. Behaviour:
+  //   - editing an old even expense with empty splits[] (means "all members
+  //     at that time") -> use ALL current members, which naturally lets you
+  //     add new joiners to the retro split.
+  //   - editing an even expense with a specific subset -> use those, dropping
+  //     any IDs that no longer exist (removed members).
+  //   - creating fresh -> everyone included by default.
+  const [included, setIncluded] = useState<Set<string>>(() => {
+    if (expense && expense.split_type === 'even' && expense.splits.length > 0) {
+      const currentIds = new Set(members.map((m) => m.id))
+      return new Set(
+        expense.splits
+          .map((s) => s.participant_id)
+          .filter((id) => currentIds.has(id)),
+      )
+    }
+    return new Set(members.map((m) => m.id))
+  })
+
+  const [shares, setShares] = useState<Record<string, string>>(() => {
+    if (expense && expense.splits.length > 0) {
+      const currentIds = new Set(members.map((m) => m.id))
+      const out: Record<string, string> = {}
+      for (const s of expense.splits) {
+        if (currentIds.has(s.participant_id)) {
+          out[s.participant_id] = String(s.amount)
+        }
+      }
+      return out
+    }
+    return {}
+  })
+
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -128,40 +175,42 @@ export function AddExpenseSheet({
           .filter((s) => s.amount > 0)
       }
 
-      await createExpense({
-        tripId,
-        description: desc,
-        amount,
-        currency,
-        paidBy,
-        category,
-        splitType: finalSplitType,
-        splits,
-      })
-      onAdded()
-      reset()
+      if (expense) {
+        await updateExpense(expense.id, {
+          description: desc,
+          amount,
+          currency,
+          paidBy,
+          category,
+          splitType: finalSplitType,
+          splits,
+        })
+      } else {
+        await createExpense({
+          tripId,
+          description: desc,
+          amount,
+          currency,
+          paidBy,
+          category,
+          splitType: finalSplitType,
+          splits,
+        })
+      }
+      onSaved()
+      // No manual reset needed — Sheet unmounts on close and state re-inits.
     } catch (err) {
-      setError(errorMessage(err, 'Failed to add expense'))
+      setError(
+        errorMessage(err, editing ? 'Failed to save changes' : 'Failed to add expense'),
+      )
       setSubmitting(false)
     }
-  }
-
-  function reset() {
-    setDesc('')
-    setAmountRaw('')
-    setCurrency(baseCurrency)
-    setCategory('food')
-    setSplitType('even')
-    setIncluded(new Set(members.map((m) => m.id)))
-    setShares({})
-    setSubmitting(false)
-    setError(null)
   }
 
   const dec = decimalsFor(currency)
 
   return (
-    <Sheet open={open} onClose={onClose} title="New expense">
+    <Sheet open={open} onClose={onClose} title={editing ? 'Edit expense' : 'New expense'}>
       {/* Description */}
       <input
         value={desc}
@@ -376,7 +425,13 @@ export function AddExpenseSheet({
             : 'bg-[var(--color-grey-200)] text-[var(--color-fg-3)] cursor-not-allowed')
         }
       >
-        {submitting ? 'Adding…' : 'Add expense'}
+        {submitting
+          ? editing
+            ? 'Saving…'
+            : 'Adding…'
+          : editing
+            ? 'Save changes'
+            : 'Add expense'}
       </button>
     </Sheet>
   )
