@@ -6,6 +6,7 @@ import { createExpense } from '../lib/api'
 import { CATEGORIES } from '../lib/categories'
 import { SUPPORTED_CURRENCIES, decimalsFor } from '../lib/currency'
 import { errorMessage } from '../lib/errors'
+import { parseAmount } from '../lib/parseAmount'
 import type {
   ExpenseCategory,
   SplitEntry,
@@ -54,7 +55,7 @@ export function AddExpenseSheet({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const amount = parseFloat(amountRaw.replace(/,/g, '')) || 0
+  const amount = parseAmount(amountRaw)
 
   const currencyOptions = useMemo(() => {
     const seen = new Set([...PROMOTED_CURRENCIES, baseCurrency])
@@ -68,7 +69,7 @@ export function AddExpenseSheet({
   const currentIncludedTotal = useMemo(() => {
     if (splitType === 'even') return null
     return Object.entries(shares).reduce(
-      (sum, [, v]) => sum + (parseFloat(v) || 0),
+      (sum, [, v]) => sum + parseAmount(v),
       0,
     )
   }, [shares, splitType])
@@ -122,7 +123,7 @@ export function AddExpenseSheet({
         splits = Object.entries(shares)
           .map(([participant_id, v]) => ({
             participant_id,
-            amount: parseFloat(v) || 0,
+            amount: parseAmount(v),
           }))
           .filter((s) => s.amount > 0)
       }
