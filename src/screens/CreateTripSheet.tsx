@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { Sheet } from '../components/Sheet'
-import { createTripWithMembers } from '../lib/api'
+import { CopyableCode } from '../components/CopyableCode'
+import { createTrip, generateTripCode } from '../lib/api'
 import { errorMessage } from '../lib/errors'
 
-const CURRENCY_OPTIONS = ['EUR', 'USD', 'GBP', 'COP', 'CHF']
+const CURRENCY_OPTIONS = ['COP', 'USD', 'EUR', 'GBP', 'CHF']
 
 type Props = {
   open: boolean
@@ -15,22 +16,14 @@ type Props = {
 export function CreateTripSheet({ open, onClose, onBack, onCreated }: Props) {
   const [name, setName] = useState('')
   const [baseCurrency, setBaseCurrency] = useState('EUR')
-  const [friends, setFriends] = useState<string[]>(['', ''])
+  const [inviteCode, setInviteCode] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const canSubmit = name.trim().length > 0 && !submitting
 
-  function updateFriend(i: number, value: string) {
-    setFriends((prev) => prev.map((n, idx) => (idx === i ? value : n)))
-  }
-
-  function removeFriend(i: number) {
-    setFriends((prev) => (prev.length > 1 ? prev.filter((_, idx) => idx !== i) : prev))
-  }
-
-  function addFriend() {
-    setFriends((prev) => [...prev, ''])
+  function handleGenerateCode() {
+    setInviteCode(generateTripCode())
   }
 
   async function submit() {
@@ -38,16 +31,16 @@ export function CreateTripSheet({ open, onClose, onBack, onCreated }: Props) {
     setError(null)
     setSubmitting(true)
     try {
-      const trip = await createTripWithMembers({
+      const trip = await createTrip({
         name,
         baseCurrency,
-        friendNames: friends,
+        providedCode: inviteCode,
       })
       onCreated(trip.id)
       // reset for next time
       setName('')
       setBaseCurrency('EUR')
-      setFriends(['', ''])
+      setInviteCode(null)
     } catch (err) {
       setError(errorMessage(err, 'Failed to create trip'))
       setSubmitting(false)
@@ -69,7 +62,7 @@ export function CreateTripSheet({ open, onClose, onBack, onCreated }: Props) {
       <div className="text-[13px] font-semibold text-[var(--color-fg-2)] mb-2">
         Base currency
       </div>
-      <div className="flex gap-2 mb-5 flex-wrap">
+      <div className="flex gap-2 mb-6 flex-wrap">
         {CURRENCY_OPTIONS.map((c) => {
           const selected = baseCurrency === c
           return (
@@ -90,43 +83,37 @@ export function CreateTripSheet({ open, onClose, onBack, onCreated }: Props) {
       </div>
 
       <div className="text-[13px] font-semibold text-[var(--color-fg-2)] mb-2">
-        Add friends (placeholders — they can sign up later with the code)
+        Invite friends
       </div>
-      <div className="flex flex-col gap-2 mb-2">
-        {friends.map((n, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <input
-              value={n}
-              onChange={(e) => updateFriend(i, e.target.value)}
-              placeholder="Friend's name"
-              className="flex-1 min-w-0 box-border bg-white border border-[var(--color-border)] rounded-xl px-4 py-3 text-[15px] text-[var(--color-fg-1)]"
-            />
-            {friends.length > 1 && (
-              <button
-                onClick={() => removeFriend(i)}
-                aria-label="Remove"
-                className="no-ring w-[38px] h-[38px] rounded-full bg-[var(--color-grey-100)] border-none cursor-pointer flex items-center justify-center flex-shrink-0"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(30,0,47,0.55)" strokeWidth="2.2" strokeLinecap="round">
-                  <path d="M5 12h14" />
-                </svg>
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
-      <button
-        onClick={addFriend}
-        className="no-ring inline-flex items-center gap-1.5 bg-transparent border-none cursor-pointer text-[var(--color-core-purple)] text-[14px] font-semibold py-1 mb-4"
-      >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-          <path d="M12 5v14M5 12h14" />
-        </svg>
-        Add person
-      </button>
+
+      {inviteCode ? (
+        <>
+          <CopyableCode code={inviteCode} variant="prominent" />
+          <p className="text-[13px] text-[var(--color-fg-2)] leading-snug mt-2.5">
+            Copy and share this code with your friends so they can join.
+            They'll need to sign up (or sign in) with their own account.
+          </p>
+          <button
+            onClick={handleGenerateCode}
+            className="no-ring bg-transparent border-none p-0 mt-2.5 cursor-pointer text-[12.5px] font-medium text-[var(--color-fg-3)]"
+          >
+            Generate a different code
+          </button>
+        </>
+      ) : (
+        <button
+          onClick={handleGenerateCode}
+          className="no-ring inline-flex items-center gap-1.5 bg-transparent border-none cursor-pointer text-[var(--color-core-purple)] text-[14px] font-semibold py-1"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+          Add person
+        </button>
+      )}
 
       {error && (
-        <p className="text-[13.5px] text-[var(--color-danger)] font-medium mb-3">
+        <p className="text-[13.5px] text-[var(--color-danger)] font-medium mt-4">
           {error}
         </p>
       )}
@@ -135,7 +122,7 @@ export function CreateTripSheet({ open, onClose, onBack, onCreated }: Props) {
         onClick={submit}
         disabled={!canSubmit}
         className={
-          'no-ring w-full py-4 rounded-full border-none font-semibold text-[16px] tracking-tight ' +
+          'no-ring w-full mt-6 py-4 rounded-full border-none font-semibold text-[16px] tracking-tight ' +
           (canSubmit
             ? 'bg-[var(--color-core-purple)] text-white cursor-pointer'
             : 'bg-[var(--color-grey-200)] text-[var(--color-fg-3)] cursor-not-allowed')

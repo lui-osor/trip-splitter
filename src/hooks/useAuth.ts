@@ -8,7 +8,14 @@ export type AuthState = {
   user: User | null
   profile: Profile | null
   loading: boolean
+  /**
+   * True after Supabase fires `PASSWORD_RECOVERY` — i.e. the user arrived
+   * here from a password-reset email link. In this state we should force
+   * them to set a new password before doing anything else.
+   */
+  isPasswordRecovery: boolean
   refreshProfile: () => Promise<void>
+  clearPasswordRecovery: () => void
 }
 
 /**
@@ -20,6 +27,7 @@ export function useAuth(): AuthState {
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -30,8 +38,9 @@ export function useAuth(): AuthState {
       setLoading(false)
     })
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s)
+      if (event === 'PASSWORD_RECOVERY') setIsPasswordRecovery(true)
     })
 
     return () => {
@@ -70,12 +79,18 @@ export function useAuth(): AuthState {
     setProfile(data)
   }
 
+  function clearPasswordRecovery() {
+    setIsPasswordRecovery(false)
+  }
+
   return {
     session,
     user: session?.user ?? null,
     profile,
     loading,
+    isPasswordRecovery,
     refreshProfile,
+    clearPasswordRecovery,
   }
 }
 
@@ -109,5 +124,25 @@ export async function signUpWithPassword(
 
 export async function signOut() {
   const { error } = await supabase.auth.signOut()
+  if (error) throw error
+}
+
+/**
+ * Send a password-reset link to the given email. Supabase composes the email
+ * and includes a one-time link that lands back on this app; when the user
+ * arrives, `onAuthStateChange` fires with `PASSWORD_RECOVERY`, unlocking
+ * the "set new password" flow.
+ */
+export async function sendPasswordResetEmail(email: string) {
+  const { error } = await supabase.auth.resetPasswordForEmail(
+    email.trim().toLowerCase(),
+    { redirectTo: window.location.origin + window.location.pathname },
+  )
+  if (error) throw error
+}
+
+/** Set a new password. Only valid while in PASSWORD_RECOVERY state. */
+export async function updatePassword(newPassword: string) {
+  const { error } = await supabase.auth.updateUser({ password: newPassword })
   if (error) throw error
 }

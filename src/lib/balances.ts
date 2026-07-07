@@ -107,6 +107,80 @@ export function computeSettlements(balances: NetBalance[]): Settlement[] {
   return out
 }
 
+/**
+ * Detailed / pairwise settle-up. For every pair of members, compute the net
+ * debt from A→B based on real expense shares, then emit one row per non-zero
+ * pair. Doesn't try to minimize transactions — reflects the true bilateral
+ * ledger, which is often what people want when reconciling bit-by-bit.
+ */
+export function computePairwiseSettlements(
+  members: TripMember[],
+  expenses: Expense[],
+  baseCurrency: string,
+  ratesInBase: Record<string, number>,
+): Settlement[] {
+  const memberById = new Map(members.map((m) => [m.id, m]))
+  // owe[debtor][creditor] = amount debtor owes creditor
+  const owe = new Map<string, Map<string, number>>()
+
+  function add(debtor: string, creditor: string, amount: number) {
+    if (debtor === creditor || amount <= 0) return
+    let row = owe.get(debtor)
+    if (!row) {
+      row = new Map()
+      owe.set(debtor, row)
+    }
+    row.set(creditor, (row.get(creditor) ?? 0) + amount)
+  }
+
+  for (const exp of expenses) {
+    const payer = exp.paid_by
+    const totalBase = convert(exp.amount, exp.currency, baseCurrency, ratesInBase)
+
+    if (exp.split_type === 'even') {
+      if (exp.splits && exp.splits.length > 0) {
+        const share = totalBase / exp.splits.length
+        for (const s of exp.splits) add(s.participant_id, payer, share)
+      } else {
+        const share = totalBase / members.length
+        for (const m of members) add(m.id, payer, share)
+      }
+    } else {
+      for (const s of exp.splits) {
+        const shareBase = convert(s.amount, exp.currency, baseCurrency, ratesInBase)
+        add(s.participant_id, payer, shareBase)
+      }
+    }
+  }
+
+  const settlements: Settlement[] = []
+  for (let i = 0; i < members.length; i++) {
+    for (let j = i + 1; j < members.length; j++) {
+      const a = members[i]
+      const b = members[j]
+      const ab = owe.get(a.id)?.get(b.id) ?? 0
+      const ba = owe.get(b.id)?.get(a.id) ?? 0
+      const diff = ab - ba
+      if (Math.abs(diff) < 0.01) continue
+      const fromMember = diff > 0 ? a : b
+      const toMember = diff > 0 ? b : a
+      settlements.push({
+        fromId: fromMember.id,
+        fromName: fromMember.name,
+        fromColor: fromMember.color,
+        toId: toMember.id,
+        toName: toMember.name,
+        toColor: toMember.color,
+        amount: round2(Math.abs(diff)),
+      })
+    }
+  }
+
+  return settlements.sort((x, y) => y.amount - x.amount)
+  // memberById kept for potential future use (icon, hover, etc.)
+  void memberById
+}
+
 function round2(n: number): number {
   return Math.round(n * 100) / 100
 }

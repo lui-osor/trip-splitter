@@ -8,7 +8,8 @@ type Props = {
   onToggleSimplify: () => void
   displayCurrency: string
   currentMemberId: string | null
-  onPay?: (s: Settlement) => void
+  onPay: (s: Settlement) => Promise<void> | void
+  paying: string | null
 }
 
 export function SettleTab({
@@ -17,6 +18,8 @@ export function SettleTab({
   onToggleSimplify,
   displayCurrency,
   currentMemberId,
+  onPay,
+  paying,
 }: Props) {
   const allSettled = settlements.length === 0
 
@@ -28,14 +31,13 @@ export function SettleTab({
             How to settle up
           </div>
           <div className="text-[12.5px] text-[var(--color-fg-2)] mt-0.5">
-            {simplify
-              ? 'Minimum transactions.'
-              : 'Every debt as-is.'}
+            {simplify ? 'Fewest payments' : 'Real debt between each pair'}
           </div>
         </div>
         <button
           onClick={onToggleSimplify}
           className="no-ring inline-flex items-center gap-2 bg-[var(--color-purple-100)] border-none rounded-full px-4 py-2.5 cursor-pointer text-[12.5px] font-semibold text-[var(--color-core-purple)]"
+          title="Toggle detailed / simplified"
         >
           {simplify ? 'Simplified' : 'Detailed'}
         </button>
@@ -57,38 +59,42 @@ export function SettleTab({
         </div>
       ) : (
         <div className="flex flex-col gap-2.5">
-          {settlements.map((s, i) => {
-            const involvesYou =
-              s.fromId === currentMemberId || s.toId === currentMemberId
+          {settlements.map((s) => {
             const title =
               s.fromId === currentMemberId
                 ? `You pay ${s.toName}`
                 : s.toId === currentMemberId
                   ? `${s.fromName} pays you`
                   : `${s.fromName} pays ${s.toName}`
+            const key = `${s.fromId}-${s.toId}`
+            const isPaying = paying === key
             return (
               <div
-                key={i}
-                className="flex items-center gap-3 py-3.5 px-4 bg-white border border-[var(--color-border)] rounded-2xl"
+                key={key}
+                className="flex items-center gap-3 py-3 px-3.5 bg-white border border-[var(--color-border)] rounded-2xl"
                 style={{ boxShadow: '0 1px 2px rgba(30,0,47,0.06)' }}
               >
                 <Avatar name={s.fromName} color={s.fromColor} size={38} />
                 <span className="flex-1 min-w-0">
-                  <span
-                    className="block text-[14.5px] font-semibold tracking-tight leading-tight"
-                    style={{
-                      color: involvesYou
-                        ? 'var(--color-fg-1)'
-                        : 'var(--color-fg-1)',
-                    }}
-                  >
+                  <span className="block text-[14.5px] font-semibold tracking-tight leading-tight">
                     {title}
                   </span>
-                  <span className="block text-[16px] font-semibold text-[var(--color-core-purple)] mt-1 tabular-nums">
+                  <span className="block text-[16px] font-semibold text-[var(--color-core-purple)] mt-0.5 tabular-nums">
                     {formatMoney(s.amount, displayCurrency)}
                   </span>
                 </span>
-                <Avatar name={s.toName} color={s.toColor} size={38} />
+                <button
+                  onClick={() => onPay(s)}
+                  disabled={isPaying}
+                  className={
+                    'no-ring flex-shrink-0 rounded-full px-4 py-2.5 text-[13px] font-semibold border-none ' +
+                    (isPaying
+                      ? 'bg-[var(--color-grey-200)] text-[var(--color-fg-3)] cursor-not-allowed'
+                      : 'bg-[var(--color-core-purple)] text-white cursor-pointer')
+                  }
+                >
+                  {isPaying ? 'Paying…' : 'Pay'}
+                </button>
               </div>
             )
           })}

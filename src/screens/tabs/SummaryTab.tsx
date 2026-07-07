@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { Avatar } from '../../components/Avatar'
-import { categoryMeta, CATEGORIES } from '../../lib/categories'
+import { CATEGORIES } from '../../lib/categories'
 import { convert, formatMoney } from '../../lib/currency'
 import type { Expense, TripMember } from '../../lib/database.types'
 

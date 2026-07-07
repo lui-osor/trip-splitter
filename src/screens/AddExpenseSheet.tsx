@@ -3,7 +3,7 @@ import { Sheet } from '../components/Sheet'
 import { CategoryIcon } from '../components/CategoryIcon'
 import { Avatar } from '../components/Avatar'
 import { createExpense } from '../lib/api'
-import { CATEGORIES, categoryMeta } from '../lib/categories'
+import { CATEGORIES } from '../lib/categories'
 import { SUPPORTED_CURRENCIES, decimalsFor } from '../lib/currency'
 import { errorMessage } from '../lib/errors'
 import type {

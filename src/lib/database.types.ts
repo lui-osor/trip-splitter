@@ -1,4 +1,4 @@
-// Types match the Supabase schema after migrations 001 + 002.
+// Types match the Supabase schema after migrations 001..006.
 
 export type ExpenseCategory =
   | 'food'
@@ -12,7 +12,7 @@ export type ExpenseCategory =
 export type SplitType = 'even' | 'unequal'
 
 export type SplitEntry = {
-  participant_id: string // trip_members.id
+  participant_id: string
   amount: number
 }
 
@@ -58,6 +58,10 @@ export type Expense = {
   created_at: string
 }
 
+// Supabase v2 client requires this exact shape on the Database generic.
+// The extra keys (Views/Enums/CompositeTypes + Relationships[]) unlock proper
+// type inference on `.from(...)` and `.rpc(...)` calls; without them the row
+// types collapse to `never` at build time.
 export type Database = {
   public: {
     Tables: {
@@ -68,6 +72,7 @@ export type Database = {
           updated_at?: string
         }
         Update: Partial<Omit<Profile, 'id' | 'created_at'>>
+        Relationships: []
       }
       trips: {
         Row: Trip
@@ -78,6 +83,7 @@ export type Database = {
           participants?: unknown[]
         }
         Update: Partial<Omit<Trip, 'id' | 'created_at'>>
+        Relationships: []
       }
       trip_members: {
         Row: TripMember
@@ -86,6 +92,7 @@ export type Database = {
           joined_at?: string
         }
         Update: Partial<Omit<TripMember, 'id' | 'joined_at'>>
+        Relationships: []
       }
       expenses: {
         Row: Expense
@@ -94,8 +101,10 @@ export type Database = {
           created_at?: string
         }
         Update: Partial<Omit<Expense, 'id' | 'created_at'>>
+        Relationships: []
       }
     }
+    Views: Record<string, never>
     Functions: {
       join_trip_by_code: {
         Args: { join_code: string }
@@ -105,7 +114,7 @@ export type Database = {
         Args: {
           trip_name: string
           trip_base_currency?: string
-          friend_names?: string[]
+          provided_code?: string | null
         }
         Returns: {
           id: string
@@ -117,5 +126,7 @@ export type Database = {
         }[]
       }
     }
+    Enums: Record<string, never>
+    CompositeTypes: Record<string, never>
   }
 }

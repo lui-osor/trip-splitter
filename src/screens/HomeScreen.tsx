@@ -2,7 +2,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTrips } from '../hooks/useTrips'
 import { useTripData } from '../hooks/useTripData'
 import { BottomNav, type TabKey } from '../components/BottomNav'
-import { computeBalances, computeSettlements } from '../lib/balances'
+import {
+  computeBalances,
+  computePairwiseSettlements,
+  computeSettlements,
+  type Settlement,
+} from '../lib/balances'
+import { createExpense } from '../lib/api'
+import { errorMessage } from '../lib/errors'
 import { convert, fetchRates, formatMoney } from '../lib/currency'
 import { supabase, IS_DEV } from '../lib/supabase'
 import { AccountSheet } from './AccountSheet'
@@ -47,6 +54,7 @@ export function HomeScreen({ userId, profile, email, refreshProfile }: Props) {
   const [displayCurrency, setDisplayCurrency] = useState<string | null>(null)
   const [simplify, setSimplify] = useState(true)
   const [rates, setRates] = useState<Record<string, number>>({})
+  const [payingKey, setPayingKey] = useState<string | null>(null)
 
   const displayName = profile?.name ?? email.split('@')[0]
   const hasTrips = trips.length > 0
@@ -80,9 +88,16 @@ export function HomeScreen({ userId, profile, email, refreshProfile }: Props) {
   }, [currentTrip?.id, currentTrip?.members, expenses, displayCur, rates])
 
   const settlements = useMemo(() => {
-    if (!simplify) return computeSettlements(balances) // TODO: raw-pairwise mode
-    return computeSettlements(balances)
-  }, [balances, simplify])
+    if (!currentTrip || Object.keys(rates).length === 0) return []
+    return simplify
+      ? computeSettlements(balances)
+      : computePairwiseSettlements(
+          currentTrip.members,
+          expenses,
+          displayCur,
+          rates,
+        )
+  }, [balances, simplify, currentTrip?.members, expenses, displayCur, rates])
 
   // Trip total (converted, in display currency)
   const tripTotal = useMemo(() => {
@@ -127,6 +142,44 @@ export function HomeScreen({ userId, profile, email, refreshProfile }: Props) {
   function openDetail(id: string) {
     setSelectedExpenseId(id)
     setSheet('expense-detail')
+  }
+
+  /**
+   * "Pay" button on the Settle tab — records a settlement expense that clears
+   * this specific debt. The expense has category='settlement' and its splits
+   * assign the full amount to the receiver, so the payer's credit and the
+   * receiver's debit net out.
+   */
+  async function handlePay(s: Settlement) {
+    if (!currentTrip) return
+    const key = `${s.fromId}-${s.toId}`
+    if (payingKey) return
+    const ok = confirm(
+      `Record ${s.fromName} paying ${s.toName} ${new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: displayCur,
+        maximumFractionDigits: 2,
+      }).format(s.amount)}?`,
+    )
+    if (!ok) return
+    setPayingKey(key)
+    try {
+      await createExpense({
+        tripId: currentTrip.id,
+        description: `${s.fromName} paid ${s.toName}`,
+        amount: s.amount,
+        currency: displayCur,
+        paidBy: s.fromId,
+        category: 'settlement',
+        splitType: 'unequal',
+        splits: [{ participant_id: s.toId, amount: s.amount }],
+      })
+      await refreshExpenses()
+    } catch (err) {
+      alert(errorMessage(err, 'Failed to record payment'))
+    } finally {
+      setPayingKey(null)
+    }
   }
 
   if (loading) {
@@ -277,6 +330,8 @@ export function HomeScreen({ userId, profile, email, refreshProfile }: Props) {
                 onToggleSimplify={() => setSimplify((s) => !s)}
                 displayCurrency={displayCur}
                 currentMemberId={currentMemberId}
+                onPay={handlePay}
+                paying={payingKey}
               />
             )}
             {tab === 'summary' && (
@@ -350,6 +405,7 @@ export function HomeScreen({ userId, profile, email, refreshProfile }: Props) {
         email={email}
         userId={userId}
         trip={currentTrip}
+        balances={balances}
         onClose={() => setSheet('none')}
         onProfileChanged={async () => {
           await Promise.all([refreshProfile(), refresh()])
@@ -361,6 +417,9 @@ export function HomeScreen({ userId, profile, email, refreshProfile }: Props) {
         onTripDeleted={async () => {
           await refresh()
           setSheet('none')
+        }}
+        onMemberRemoved={async () => {
+          await refresh()
         }}
       />
     </div>
@@ -398,11 +457,3 @@ function EmptyState({
   )
 }
 
-function ComingSoon({ label }: { label: string }) {
-  return (
-    <div className="pt-16 text-center">
-      <h3 className="mb-1.5">Coming soon</h3>
-      <p className="text-[13.5px] text-[var(--color-fg-2)]">{label}</p>
-    </div>
-  )
-}

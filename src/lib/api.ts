@@ -53,31 +53,49 @@ export async function listMyTrips(): Promise<TripWithMembers[]> {
 }
 
 /**
- * Create a new trip and add the current user as owner + first member.
- * Calls the SECURITY DEFINER RPC `create_trip` so the whole flow (trip + owner
- * membership + placeholder friends) runs atomically without RLS/RETURNING races.
- * `friendNames` are placeholder members (user_id = null, joinable later).
+ * 5-char invite code alphabet. Excludes easily-confused chars (0/O, 1/I, etc.).
+ * Space size 32^5 ≈ 33M — collision-resistant at any reasonable scale.
  */
-export async function createTripWithMembers(input: {
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+
+export function generateTripCode(): string {
+  let out = ''
+  for (let i = 0; i < 5; i++) {
+    out += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]
+  }
+  return out
+}
+
+/**
+ * Create a new trip. Only the creator becomes an initial member; everyone
+ * else joins via the invite code (real accounts, no placeholder rows).
+ * If `providedCode` is set, we hand it to the RPC — this lets the user see
+ * and share the code before submitting. On the unlikely unique-code collision,
+ * the RPC will error; we retry once with a freshly-generated code.
+ */
+export async function createTrip(input: {
   name: string
   baseCurrency: string
-  friendNames: string[]
+  providedCode?: string | null
 }): Promise<TripWithMembers> {
-  const cleanedFriends = input.friendNames
-    .map((n) => n.trim())
-    .filter((n) => n.length > 0)
+  async function attempt(code: string | null) {
+    return supabase.rpc('create_trip', {
+      trip_name: input.name,
+      trip_base_currency: input.baseCurrency,
+      provided_code: code,
+    })
+  }
 
-  const { data, error } = await supabase.rpc('create_trip', {
-    trip_name: input.name,
-    trip_base_currency: input.baseCurrency,
-    friend_names: cleanedFriends,
-  })
+  let { data, error } = await attempt(input.providedCode ?? null)
+  // Retry once on unique_violation with a fresh code.
+  if (error && /duplicate|unique/i.test(error.message)) {
+    ;({ data, error } = await attempt(generateTripCode()))
+  }
   if (error) throw error
 
   const created = Array.isArray(data) ? data[0] : data
   if (!created) throw new Error('Trip was not created')
 
-  // Fetch the newly-created trip's members so the UI has a complete object.
   const { data: members, error: mErr } = await supabase
     .from('trip_members')
     .select()
@@ -187,6 +205,20 @@ export async function renameTripMember(
   const { error } = await supabase
     .from('trip_members')
     .update({ name: trimmed })
+    .eq('id', memberId)
+  if (error) throw error
+}
+
+/**
+ * Remove a member from a trip. RLS enforces that only the trip owner can
+ * remove others (and members can remove themselves via `leaveTrip`).
+ * The caller is responsible for the balance check — we don't want to duplicate
+ * that logic in the DB when the client already has it computed.
+ */
+export async function removeTripMember(memberId: string): Promise<void> {
+  const { error } = await supabase
+    .from('trip_members')
+    .delete()
     .eq('id', memberId)
   if (error) throw error
 }

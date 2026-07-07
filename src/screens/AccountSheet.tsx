@@ -4,13 +4,15 @@ import { Sheet } from '../components/Sheet'
 import {
   deleteTrip,
   leaveTrip,
+  removeTripMember,
   renameTripMember,
   updateProfileName,
 } from '../lib/api'
 import { errorMessage } from '../lib/errors'
 import { signOut } from '../hooks/useAuth'
-import type { Profile, TripMember } from '../lib/database.types'
+import type { Profile } from '../lib/database.types'
 import type { TripWithMembers } from '../lib/api'
+import type { NetBalance } from '../lib/balances'
 
 type Props = {
   open: boolean
@@ -18,11 +20,16 @@ type Props = {
   email: string
   userId: string
   trip: TripWithMembers | null
+  balances: NetBalance[]
   onClose: () => void
   onProfileChanged: () => Promise<void> | void
   onTripLeft: () => Promise<void> | void
   onTripDeleted: () => Promise<void> | void
+  onMemberRemoved: () => Promise<void> | void
 }
+
+// A member is settled iff their net balance rounds to 0 in the display currency.
+const SETTLED_EPSILON = 0.01
 
 export function AccountSheet({
   open,
@@ -30,15 +37,20 @@ export function AccountSheet({
   email,
   userId,
   trip,
+  balances,
   onClose,
   onProfileChanged,
   onTripLeft,
   onTripDeleted,
+  onMemberRemoved,
 }: Props) {
   const [name, setName] = useState(profile?.name ?? '')
-  const [memberNames, setMemberNames] = useState<Record<string, string>>({})
+  const [myMemberName, setMyMemberName] = useState<string>('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const isOwner = trip?.owner_id === userId
+  const myMemberId = trip?.members.find((m) => m.user_id === userId)?.id ?? null
 
   useEffect(() => {
     setName(profile?.name ?? '')
@@ -46,29 +58,32 @@ export function AccountSheet({
 
   useEffect(() => {
     if (!trip) return
-    setMemberNames(
-      Object.fromEntries(trip.members.map((m) => [m.id, m.name])),
-    )
-  }, [trip?.id, trip?.members])
+    const self = trip.members.find((m) => m.user_id === userId)
+    setMyMemberName(self?.name ?? profile?.name ?? '')
+  }, [trip?.id, trip?.members, userId, profile?.name])
 
-  const isOwner = trip?.owner_id === userId
+  function balanceFor(memberId: string): number {
+    return balances.find((b) => b.memberId === memberId)?.amount ?? 0
+  }
+
+  function isSettled(memberId: string): boolean {
+    return Math.abs(balanceFor(memberId)) < SETTLED_EPSILON
+  }
 
   async function saveNameChanges() {
     setError(null)
     setSaving(true)
     try {
       const tasks: Promise<unknown>[] = []
-      // Profile name change
+      // Profile name change (used everywhere the user appears on other trips too)
       if (name.trim() && name.trim() !== (profile?.name ?? '')) {
         tasks.push(updateProfileName(name))
       }
-      // Member name changes
-      if (trip) {
-        for (const m of trip.members) {
-          const next = memberNames[m.id]
-          if (next !== undefined && next.trim() && next.trim() !== m.name) {
-            tasks.push(renameTripMember(m.id, next))
-          }
+      // Rename the current user's member row for THIS trip (independent).
+      if (myMemberId) {
+        const current = trip?.members.find((m) => m.id === myMemberId)
+        if (myMemberName.trim() && myMemberName.trim() !== current?.name) {
+          tasks.push(renameTripMember(myMemberId, myMemberName))
         }
       }
       if (tasks.length > 0) {
@@ -82,9 +97,32 @@ export function AccountSheet({
     }
   }
 
+  async function handleRemoveMember(memberId: string, memberName: string) {
+    if (!isSettled(memberId)) {
+      alert(
+        `${memberName} still has a pending balance on this trip. Settle it up first, then try removing them again.`,
+      )
+      return
+    }
+    if (!confirm(`Remove ${memberName} from the trip?`)) return
+    try {
+      await removeTripMember(memberId)
+      await onMemberRemoved()
+    } catch (err) {
+      alert(errorMessage(err, 'Failed to remove member'))
+    }
+  }
+
   async function handleLeave() {
     if (!trip) return
-    if (!confirm(`Leave "${trip.name}"? You can rejoin later with the code.`)) return
+    if (myMemberId && !isSettled(myMemberId)) {
+      alert(
+        `You still have a pending balance on this trip. Settle up first, then try leaving again.`,
+      )
+      return
+    }
+    if (!confirm(`Leave "${trip.name}"? You can rejoin later with the code.`))
+      return
     try {
       await leaveTrip(trip.id)
       await onTripLeft()
@@ -124,7 +162,7 @@ export function AccountSheet({
         </div>
       </div>
 
-      {/* Your name */}
+      {/* Your name (account-wide) */}
       <div className="text-[13px] font-semibold text-[var(--color-fg-2)] mt-5 mb-2">
         Your name
       </div>
@@ -134,40 +172,87 @@ export function AccountSheet({
         placeholder="Your name"
         className="w-full box-border bg-white border border-[var(--color-border)] rounded-xl px-4 py-3 text-[15.5px] text-[var(--color-fg-1)]"
       />
+      <p className="text-[12px] text-[var(--color-fg-3)] mt-1.5">
+        Shown across all your trips.
+      </p>
 
-      {/* Trip members (renameable) */}
+      {/* Trip members (only your row is editable; others are read-only) */}
       {trip && trip.members.length > 0 && (
         <>
           <div className="text-[13px] font-semibold text-[var(--color-fg-2)] mt-5 mb-2">
             Trip members
           </div>
           <div className="border border-[var(--color-border)] rounded-2xl overflow-hidden">
-            {trip.members.map((m, idx) => (
-              <div
-                key={m.id}
-                className={
-                  'flex items-center gap-3 py-2.5 px-3 ' +
-                  (idx < trip.members.length - 1
-                    ? 'border-b border-[var(--color-divider)]'
-                    : '')
-                }
-              >
-                <Avatar name={m.name} color={m.color} size={34} />
-                <input
-                  value={memberNames[m.id] ?? m.name}
-                  onChange={(e) =>
-                    setMemberNames((prev) => ({ ...prev, [m.id]: e.target.value }))
+            {trip.members.map((m, idx) => {
+              const isSelf = m.user_id === userId
+              const memberSettled = isSettled(m.id)
+              const canOwnerRemove = isOwner && !isSelf
+              return (
+                <div
+                  key={m.id}
+                  className={
+                    'flex items-center gap-3 py-2.5 px-3 ' +
+                    (idx < trip.members.length - 1
+                      ? 'border-b border-[var(--color-divider)]'
+                      : '')
                   }
-                  className="flex-1 min-w-0 border-none bg-transparent text-[14.5px] font-medium py-1.5 focus:outline-none no-ring"
-                />
-                {m.user_id === userId && (
-                  <span className="text-[11px] uppercase font-semibold text-[var(--color-fg-3)] tracking-wider">
-                    You
-                  </span>
-                )}
-              </div>
-            ))}
+                >
+                  <Avatar name={m.name} color={m.color} size={34} />
+                  {isSelf ? (
+                    <input
+                      value={myMemberName}
+                      onChange={(e) => setMyMemberName(e.target.value)}
+                      className="flex-1 min-w-0 border-none bg-transparent text-[14.5px] font-medium py-1.5 focus:outline-none no-ring"
+                      aria-label="Your name on this trip"
+                    />
+                  ) : (
+                    <span className="flex-1 min-w-0 text-[14.5px] font-medium truncate">
+                      {m.name}
+                    </span>
+                  )}
+                  {isSelf && (
+                    <span className="text-[11px] uppercase font-semibold text-[var(--color-fg-3)] tracking-wider">
+                      You
+                    </span>
+                  )}
+                  {canOwnerRemove && (
+                    <button
+                      onClick={() => handleRemoveMember(m.id, m.name)}
+                      title={
+                        memberSettled
+                          ? 'Remove from trip'
+                          : 'Cannot remove — pending balance'
+                      }
+                      className={
+                        'no-ring w-[30px] h-[30px] rounded-full flex items-center justify-center border-none flex-shrink-0 ' +
+                        (memberSettled
+                          ? 'bg-[var(--color-danger-soft)] cursor-pointer'
+                          : 'bg-[var(--color-grey-100)] cursor-not-allowed opacity-60')
+                      }
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke={memberSettled ? 'var(--color-danger)' : 'var(--color-fg-3)'}
+                        strokeWidth="2.4"
+                        strokeLinecap="round"
+                      >
+                        <path d="M5 12h14" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              )
+            })}
           </div>
+          {isOwner && (
+            <p className="text-[12px] text-[var(--color-fg-3)] mt-2">
+              As the trip owner, you can remove other members once they've settled
+              up.
+            </p>
+          )}
         </>
       )}
 
