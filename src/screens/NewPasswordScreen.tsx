@@ -51,7 +51,7 @@ export function NewPasswordScreen({ email, onDone }: Props) {
     <div className="absolute inset-0 z-[60] bg-[var(--color-sand)] flex flex-col px-8 pt-14 pb-8">
       <div className="flex-1 flex flex-col justify-center">
         <div className="flex items-center gap-2 mb-8">
-          <Logo size={56} />
+          <Logo height={68} />
           {IS_DEV && (
             <span className="text-[10px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-full bg-[var(--color-purple-100)] text-[var(--color-core-purple)]">
               Dev

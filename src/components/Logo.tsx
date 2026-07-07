@@ -1,24 +1,22 @@
 import logoUrl from '../assets/logo.png'
 
 type Props = {
-  size?: number
+  /** Rendered height in px. Width auto-scales to preserve the wordmark's aspect ratio. */
+  height?: number
   className?: string
 }
 
 /**
- * The Trip Splitter mark — a camera framing a world map, on an orange disc.
- * The source PNG is already circular; a subtle border-radius clips any
- * remaining anti-aliased edges so the disc sits cleanly on any background.
+ * Trip Splitter wordmark. The PNG's native aspect is ~1.44:1 (wide),
+ * so we size by height and let width follow.
  */
-export function Logo({ size = 52, className = '' }: Props) {
+export function Logo({ height = 48, className = '' }: Props) {
   return (
     <img
       src={logoUrl}
       alt="Trip Splitter"
-      width={size}
-      height={size}
-      className={'block rounded-full select-none ' + className}
-      style={{ width: size, height: size }}
+      className={'block select-none ' + className}
+      style={{ height, width: 'auto' }}
       draggable={false}
     />
   )
