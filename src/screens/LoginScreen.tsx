@@ -4,6 +4,7 @@ import {
   signInWithPassword,
   signUpWithPassword,
 } from '../hooks/useAuth'
+import { Logo } from '../components/Logo'
 import { errorMessage } from '../lib/errors'
 import { IS_DEV } from '../lib/supabase'
 
@@ -92,9 +93,7 @@ export function LoginScreen() {
       <div className="flex-1 flex flex-col justify-center">
         {/* Logo mark */}
         <div className="flex items-center gap-2 mb-8">
-          <div className="w-[52px] h-[52px] rounded-[14px] bg-[var(--color-core-purple)] text-white font-semibold text-[26px] flex items-center justify-center leading-none">
-            ts
-          </div>
+          <Logo size={56} />
           {IS_DEV && (
             <span className="text-[10px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-full bg-[var(--color-purple-100)] text-[var(--color-core-purple)]">
               Dev
