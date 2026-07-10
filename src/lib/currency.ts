@@ -104,7 +104,8 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   EUR: '€',
   USD: '$',
   GBP: '£',
-  COP: '$',
+  // Explicit COP prefix so `$` isn't ambiguous with USD.
+  COP: 'COP $',
   CHF: 'CHF',
   SEK: 'kr',
   NOK: 'kr',

@@ -71,12 +71,14 @@ export function FeedTab({
                 </span>
               </span>
               <span className="text-right flex-shrink-0">
+                {/* Primary: amount in the user's selected display currency.
+                    Secondary: the expense's original currency (what was actually paid). */}
                 <span className="block text-[15px] font-semibold tracking-tight tabular-nums">
-                  {formatMoney(exp.amount, exp.currency)}
+                  {formatMoney(converted, baseCurrency)}
                 </span>
                 {showConverted && (
                   <span className="block text-[11.5px] text-[var(--color-fg-3)] mt-0.5 tabular-nums">
-                    ≈ {formatMoney(converted, baseCurrency)}
+                    {formatMoney(exp.amount, exp.currency)}
                   </span>
                 )}
               </span>

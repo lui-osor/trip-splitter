@@ -80,12 +80,13 @@ export function ExpenseDetailSheet({
         <div className="text-[13px] text-[var(--color-fg-2)] mt-0.5">
           {payer?.name ?? '?'} paid · {cat.label}
         </div>
+        {/* Primary: display currency. Secondary: original currency if different. */}
         <div className="font-semibold text-[32px] tracking-tight mt-3">
-          {formatMoney(expense.amount, expense.currency)}
+          {formatMoney(converted, baseCurrency)}
         </div>
         {showConverted && (
           <div className="text-[13px] text-[var(--color-fg-3)]">
-            ≈ {formatMoney(converted, baseCurrency)}
+            {formatMoney(expense.amount, expense.currency)}
           </div>
         )}
       </div>
